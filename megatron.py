@@ -1,131 +1,102 @@
 import streamlit as st
 import os
 import psutil
-import pyautogui
-import io
 import time
-import platform
-import gc
-from PIL import Image
+import speech_recognition as sr
+from gtts import gTTS
+from streamlit_mic_recorder import mic_recorder
+import io
+import pyautogui
 
-# 1. MIPANGILIO YA DASHBOARD
-st.set_page_config(page_title="Megatron Command Center", layout="wide")
+# Mipangilio ya Dashboard
+st.set_page_config(page_title="Megatron Voice Command", page_icon="🤖")
 
-# NENOSIRI
-SECRET_PASSWORD = "transformers2026"
+# --- Kazi ya Megatron Kuzungumza (Sauti ya Robot) ---
+def megatron_speak(text):
+    tts = gTTS(text=text, lang='en') 
+    audio_fp = io.BytesIO()
+    tts.write_to_fp(audio_fp)
+    st.audio(audio_fp, format='audio/mp3', autoplay=True)
 
-# 2. ULINZI (LOGIN)
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
+# --- Session State ya Kumbukumbu ---
+if "status" not in st.session_state:
+    st.session_state.status = "SLEEPING"
+if "pending_command" not in st.session_state:
+    st.session_state.pending_command = None
 
-if not st.session_state["authenticated"]:
-    st.title("🔐 Mfumo Umefungwa")
-    pwd = st.text_input("Ingiza Nenosiri la Megatron:", type="password")
-    if st.button("Fungua"):
-        if pwd == SECRET_PASSWORD:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Nenosiri si sahihi!")
-    st.stop()
+# --- UI YA FRONT-END ---
+st.markdown("<h1 style='text-align: center; color: red;'>MEGATRON INTELLIGENCE OS</h1>", unsafe_allow_html=True)
 
-# 3. NAVIGATION STATE KWA FILE EXPLORER
-if "current_path" not in st.session_state:
-    st.session_state["current_path"] = os.path.expanduser("~") # Anza kwenye folder la User
+# Pakia Picha ya Robot (Megatron.png)
+if os.path.exists("megatron.png"):
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        st.image("megatron.png", caption="Megatron is watching you...")
+else:
+    st.warning("Picha ya 'megatron.png' haipo kwenye folder hili!")
 
-# --- SIDEBAR: SYSTEM STATUS ---
-st.sidebar.title("🤖 System Monitor")
-with st.sidebar:
-    cpu_usage = psutil.cpu_percent(interval=1)
-    ram_data = psutil.virtual_memory()
-    st.metric("CPU", f"{cpu_usage}%")
-    st.metric("RAM", f"{ram_data.percent}%")
-    
-    st.divider()
-    if st.button("🛑 ZIMA PC"):
-        os.system("shutdown /s /t 10")
-        st.warning("PC itazima baada ya sekunde 10!")
-    if st.button("🔄 RESTART"):
-        os.system("shutdown /r /t 10")
-        st.info("PC itawaka upya...")
+st.divider()
 
-# --- MAIN INTERFACE ---
-tab1, tab2 = st.tabs(["📺 Live Stream (Optimized)", "📂 Advanced File Explorer"])
+# Hali ya sasa
+st.subheader(f"Hali ya Megatron: `{st.session_state.status}`")
 
-# --- TAB 1: LIVE STREAM (Anti-MemoryError Logic) ---
-with tab1:
-    st.header("Live View (Low Latency)")
-    streaming = st.toggle("Washa Stream")
-    placeholder = st.empty()
-    
-    if streaming:
-        st.toast("Inarusha picha...")
-        while streaming:
-            try:
-                # Piga picha ya kioo
-                screenshot = pyautogui.screenshot()
-                
-                # 1. Optimization: Punguza ukubwa (Hii inazuia MemoryError)
-                # 640x360 ni bora kwa simu na inatumia RAM kidogo sana
-                screenshot = screenshot.resize((640, 360))
-                
-                # 2. Optimization: Tumia JPEG na Quality ya 50
-                buf = io.BytesIO()
-                screenshot.save(buf, format='JPEG', quality=50, optimize=True)
-                
-                placeholder.image(buf.getvalue(), use_container_width=True)
-                
-                # 3. Optimization: Safisha Memory
-                del screenshot
-                buf.close()
-                gc.collect() # Lazimisha Python kusafisha RAM iliyobaki
-                
-                time.sleep(0.05) # Speed control
-            except Exception as e:
-                st.error(f"Hitilafu ya Stream: {e}")
-                break
-    else:
-        placeholder.info("Washa toggle hapo juu kuanza kuona kioo cha PC.")
+# --- KUREKODI SAUTI ---
+st.write("Bonyeza mic, zungumza, kisha subiri Megatron ajibu:")
+audio = mic_recorder(start_prompt="🎤 ZUNGUMZA NA MEGATRON", stop_prompt="🛑 ACHA", key='recorder')
 
-# --- TAB 2: ADVANCED FILE EXPLORER ---
-with tab2:
-    st.header("File Navigator")
-    
-    # Path ya sasa na kitufe cha kurudi nyuma
-    curr_path = st.session_state["current_path"]
-    col_path, col_back = st.columns([4, 1])
-    
-    col_path.code(f"Folder: {curr_path}")
-    if col_back.button("⬅️ Rudi Nyuma"):
-        st.session_state["current_path"] = os.path.dirname(curr_path)
-        st.rerun()
-
+if audio:
+    r = sr.Recognizer()
+    audio_data = sr.AudioData(audio['bytes'], 16000, 2)
     try:
-        # Pata list ya mafaili
-        items = os.listdir(curr_path)
-        items.sort(key=lambda x: os.path.isdir(os.path.join(curr_path, x)), reverse=True)
+        # Geuza sauti kuwa maandishi (Inatumia Google Speech API)
+        command = r.recognize_google(audio_data).lower()
+        st.write(f"💬 **Umesema:** {command}")
 
-        for item in items:
-            item_path = os.path.join(curr_path, item)
-            is_dir = os.path.isdir(item_path)
-            
-            c1, c2 = st.columns([0.8, 0.2])
-            
-            if is_dir:
-                if c1.button(f"📁 {item}", key=item_path, use_container_width=True):
-                    st.session_state["current_path"] = item_path
-                    st.rerun()
+        # --- LOGIC ZA MEGATRON ---
+
+        # 1. Kuanza: Megatron lazima aitwe
+        if st.session_state.status == "SLEEPING":
+            if "megatron" in command:
+                st.session_state.status = "LISTENING"
+                megatron_speak("AS YOU COMMAND")
+                st.rerun()
             else:
-                c1.write(f"📄 {item}")
-                # Download button (Ili kuzuia MemoryError, usipakue faili > 50MB)
-                file_size = os.path.getsize(item_path) / (1024 * 1024)
-                if file_size < 50:
-                    with open(item_path, "rb") as f:
-                        c2.download_button("Pakua", f, file_name=item, key=f"dl_{item_path}")
-                else:
-                    c2.write("🐘 Too Big")
-                    
-    except PermissionError:
-        st.error("Huna ruhusa ya kufungua folder hili!")
+                st.warning("Megatron hasikilizi... Anza kwa kusema jina lake.")
+
+        # 2. Kupokea Amri (Zima/Washa)
+        elif st.session_state.status == "LISTENING":
+            if "zima pc" in command or "shutdown" in command:
+                st.session_state.pending_command = "ZIMA PC"
+                st.session_state.status = "CONFIRMING"
+                megatron_speak(f"{st.session_state.pending_command} command confirmed. Confirm with GO or ACHA")
+            elif "washa pc" in command or "restart" in command:
+                st.session_state.pending_command = "WASHA PC"
+                st.session_state.status = "CONFIRMING"
+                megatron_speak(f"{st.session_state.pending_command} command confirmed. Confirm with GO or ACHA")
+            elif "acha" in command or "stop" in command:
+                st.session_state.status = "SLEEPING"
+                megatron_speak("ACHA! I am ignoring your request.")
+            st.rerun()
+
+        # 3. Hatua ya Mwisho (GO au ACHA)
+        elif st.session_state.status == "CONFIRMING":
+            if "go" in command:
+                megatron_speak("EXECUTING NOW. GOODBYE.")
+                time.sleep(2)
+                if st.session_state.pending_command == "ZIMA PC":
+                    os.system("shutdown /s /t 1")
+                elif st.session_state.pending_command == "WASHA PC":
+                    os.system("shutdown /r /t 1")
+            elif "acha" in command:
+                st.session_state.status = "SLEEPING"
+                st.session_state.pending_command = None
+                megatron_speak("ACHA! Process terminated.")
+                st.rerun()
+
     except Exception as e:
-        st.error(f"Hitilafu: {e}")
+        st.error("Megatron ameshindwa kukuelewa. Zungumza waziwazi!")
+
+# System Stats Sidebar
+st.sidebar.header("Megatron Sensors")
+st.sidebar.progress(psutil.cpu_percent() / 100, text="CPU Usage")
+st.sidebar.progress(psutil.virtual_memory().percent / 100, text="RAM Usage")
